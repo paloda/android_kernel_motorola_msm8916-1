@@ -259,8 +259,11 @@ struct buffer_info *get_registered_buf(struct msm_vidc_inst *inst,
 	list_for_each_entry(temp, &inst->registeredbufs.list, list) {
 		for (i = 0; (i < temp->num_planes)
 			&& (i < VIDEO_MAX_PLANES); i++) {
+			bool ion_hndl_matches = temp->handle[i] ?
+				msm_smem_compare_buffers(inst->mem_client, fd,
+				temp->handle[i]->smem_priv) : false;
 			if (temp &&
-				((fd == temp->fd[i]) ||
+				(ion_hndl_matches ||
 				(device_addr == temp->device_addr[i])) &&
 				(CONTAINS(temp->buff_off[i],
 				temp->size[i], buff_off)
@@ -467,6 +470,9 @@ int map_and_register_buf(struct msm_vidc_inst *inst, struct v4l2_buffer *b)
 	int plane = 0;
 	int i = 0, rc = 0;
 	struct msm_smem *same_fd_handle = NULL;
+	bool check_same_fd_handle = !is_dynamic_output_buffer_mode(b, inst) &&
+		!(inst->session_type == MSM_VIDC_ENCODER &&
+			b->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
 
 	if (!b || !inst) {
 		dprintk(VIDC_ERR, "%s: invalid input\n", __func__);
@@ -530,7 +536,7 @@ int map_and_register_buf(struct msm_vidc_inst *inst, struct v4l2_buffer *b)
 		if (rc < 0)
 			goto exit;
 
-		if (!is_dynamic_output_buffer_mode(b, inst))
+		if (check_same_fd_handle)
 			same_fd_handle = get_same_fd_buffer(
 						&inst->registeredbufs,
 						b->m.planes[i].reserved[0]);
@@ -997,8 +1003,8 @@ int msm_vidc_dqbuf(void *instance, struct v4l2_buffer *b)
 		if (!inst->map_output_buffer)
 			continue;
 		if (EXTRADATA_IDX(b->length) &&
-			(i == EXTRADATA_IDX(b->length)) &&
-			!b->m.planes[i].m.userptr) {
+			i == EXTRADATA_IDX(b->length))
+		{
 			continue;
 		}
 		buffer_info = device_to_uvaddr(&inst->registeredbufs,
